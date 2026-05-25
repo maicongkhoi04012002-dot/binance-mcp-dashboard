@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Environment secrets — KHÔNG upload lên GitHub!
+.env
+
+# Database (sẽ được tạo tự động trên server)
+signals.db
+*.db
+
+# Executable files (quá lớn, không cần thiết trên cloud)
+ngrok.exe
+cloudflared.exe
+*.exe
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

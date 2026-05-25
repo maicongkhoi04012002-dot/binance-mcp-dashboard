@@ -1,0 +1,58 @@
+# TradingView Pine Script Alert Message Template
+
+# Dùng JSON này trong phần "Message" của TradingView Alert:
+# (Thay thế action bằng signal thực tế của bạn)
+
+{
+  "ticker":    "{{ticker}}",
+  "timeframe": "{{interval}}",
+  "action":    "BUY",
+  "price":     {{close}},
+  "close":     {{close}},
+  "open":      {{open}},
+  "high":      {{high}},
+  "low":       {{low}},
+  "volume":    {{volume}},
+  "rsi":       0,
+  "ema9":      0,
+  "wma45":     0
+}
+
+# ──────────────────────────────────────────────────────
+# Pine Script mẫu để tích hợp RSI + EMA9 + WMA45:
+# ──────────────────────────────────────────────────────
+
+//@version=5
+strategy("TV-MCP Signal", overlay=true)
+
+rsiLen  = input.int(14, "RSI Length")
+emaLen  = input.int(9,  "EMA Length")
+wmaLen  = input.int(45, "WMA Length")
+
+rsiVal  = ta.rsi(close, rsiLen)
+ema9    = ta.ema(close, emaLen)
+wma45   = ta.wma(close, wmaLen)
+
+// ── Entry conditions ────────────────────────────────
+longCond  = ta.crossover(ema9, wma45) and rsiVal > 50
+shortCond = ta.crossunder(ema9, wma45) and rsiVal < 50
+
+// ── Alerts ─────────────────────────────────────────
+// Tạo alert với message JSON sau (gắn vào từng condition):
+
+// BUY Alert message:
+// {"ticker":"{{ticker}}","timeframe":"{{interval}}","action":"BUY","price":{{close}},"close":{{close}},"open":{{open}},"high":{{high}},"low":{{low}},"volume":{{volume}},"rsi":REPLACE_RSI,"ema9":REPLACE_EMA9,"wma45":REPLACE_WMA45}
+
+// SELL Alert message:
+// {"ticker":"{{ticker}}","timeframe":"{{interval}}","action":"SELL","price":{{close}},"close":{{close}},"open":{{open}},"high":{{high}},"low":{{low}},"volume":{{volume}},"rsi":REPLACE_RSI,"ema9":REPLACE_EMA9,"wma45":REPLACE_WMA45}
+
+// Webhook URL: https://YOUR_NGROK_URL/webhook
+
+if longCond
+    strategy.entry("Long", strategy.long)
+
+if shortCond
+    strategy.entry("Short", strategy.short)
+
+plot(ema9,  "EMA 9",  color=color.blue)
+plot(wma45, "WMA 45", color=color.orange)

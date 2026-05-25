@@ -1,0 +1,33 @@
+# Render.com deployment config
+# https://render.com/docs/render-yaml-reference
+
+services:
+  - type: web
+    name: binance-mcp-dashboard
+    runtime: python
+    region: singapore   # gần Việt Nam nhất
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python webhook_server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: WEBHOOK_PORT
+        sync: false       # Render tự inject PORT, không cần set
+      - key: BINANCE_DRY_RUN
+        value: "true"
+      - key: BINANCE_TESTNET
+        value: "true"
+      - key: MAX_USDT_PER_TRADE
+        value: "20"
+      - key: MAX_OPEN_TRADES
+        value: "3"
+      - key: STOP_LOSS_PCT
+        value: "2.0"
+      - key: TAKE_PROFIT_PCT
+        value: "4.0"
+      # Các env sau cần set thủ công trên Render dashboard:
+      # EMAIL_SENDER, EMAIL_APP_PASSWORD, EMAIL_RECIPIENT
+      # BINANCE_API_KEY, BINANCE_API_SECRET (tuỳ chọn)
+      # WEBHOOK_SECRET (tuỳ chọn)
+    healthCheckPath: /health

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tradingview": {
+      "command": "python",
+      "args": [
+        "C:\\Users\\maico\\.gemini\\antigravity\\scratch\\tradingview-mcp\\mcp_server.py"
+      ],
+      "description": "TradingView signal reader – exposes BUY/SELL alerts to AI"
+    }
+  }
+}
