@@ -365,6 +365,21 @@ async def health():
     return {"status": "ok", "time": datetime.utcnow().isoformat()}
 
 
+@app.post("/admin/clear-signals")
+async def clear_signals():
+    """Xóa toàn bộ signals trong DB (dùng để reset test data)."""
+    import aiosqlite
+    from database import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM signals")
+        await db.commit()
+        cur = await db.execute("SELECT changes()")
+        row = await cur.fetchone()
+        deleted = row[0] if row else 0
+    log.info(f"🗑  Cleared {deleted} signals from DB")
+    return {"ok": True, "deleted": deleted}
+
+
 # ─── BACKTEST API ─────────────────────────────────────────────────────────────
 
 @app.get("/api/backtest")
