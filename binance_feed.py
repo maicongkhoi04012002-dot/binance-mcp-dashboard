@@ -339,12 +339,63 @@ class StreamState:
 
 # ─── WEBSOCKET HANDLER ────────────────────────────────────────────────────────
 
+async def seed_initial_signal(state: StreamState, last_kline: dict):
+    """
+    Tính và lưu signal ngay sau warmup từ nến đã đóng gần nhất.
+    Giúp dashboard hiển thị dữ liệu ngay khi server khởi động
+    mà không cần chờ nến mới đóng (có thể mất hàng giờ với 1D).
+    """
+    if not state.ready:
+        return
+    rsi, ema9, wma45, macd, sig, hist, vol_cur, vol_avg = state.indicators()
+    action = state.detect_signal(rsi, ema9, wma45, macd, sig, hist, vol_cur, vol_avg)
+    if action not in ("BUY", "SELL"):
+        log.info(f"📊 {state.symbol} [{state.label}] seed: NEUTRAL — skipping")
+        return
+
+    close = float(last_kline[4])
+    high  = float(last_kline[2])
+    low_  = float(last_kline[3])
+    open_ = float(last_kline[1])
+    vol   = float(last_kline[5])
+
+    sl_price, sl_method = state.calc_stoploss(action, close)
+    sl_pct = round(abs(close - sl_price) / close * 100, 2)
+
+    payload = {
+        "ticker":    state.symbol,
+        "timeframe": state.label,
+        "action":    action,
+        "price":     close,
+        "close":     close,
+        "open":      open_,
+        "high":      high,
+        "low":       low_,
+        "volume":    vol,
+        "rsi":       rsi,
+        "ema9":      ema9,
+        "wma45":     wma45,
+        "macd":      macd,
+        "macd_sig":  sig,
+        "macd_hist": hist,
+        "sl_price":  sl_price,
+        "sl_method": sl_method,
+        "sl_pct":    sl_pct,
+        "source":    "binance_seed",
+    }
+    sig_id = await insert_signal(payload)
+    state.prev_action = action
+    arrow = "🟢 BUY" if action == "BUY" else "🔴 SELL"
+    log.info(f"🌱 SEED #{sig_id}: {arrow} {state.symbol} [{state.label}] @ {close}  RSI={rsi}  SL={sl_price:.4f}")
+
+
 async def handle_stream(state: StreamState):
     stream_name = f"{state.symbol.lower()}@kline_{state.interval}"
     url = f"{BINANCE_WS}?streams={stream_name}"
 
     # Warmup từ REST trước
     log.info(f"⏳ Fetching {WARMUP} historical candles for {state.symbol} [{state.label}]...")
+    last_closed_kline = None
     try:
         resp = requests.get(BINANCE_REST, params={
             "symbol": state.symbol, "interval": state.interval, "limit": WARMUP
@@ -358,7 +409,11 @@ async def handle_stream(state: StreamState):
                 high   = float(k[2]),
                 low    = float(k[3]),
             )
+            last_closed_kline = k
         log.info(f"✅ {state.symbol} [{state.label}] warmup done — {len(state.closes)} candles loaded")
+        # ── Seed signal ngay từ dữ liệu warmup ──────────────────────────────
+        if last_closed_kline:
+            await seed_initial_signal(state, last_closed_kline)
     except Exception as e:
         log.warning(f"Warmup failed for {state.symbol}: {e}")
 
@@ -541,6 +596,45 @@ async def stop_loss_monitor():
 
 # ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
+async def periodic_reseed(states: list, interval_hours: float = 4.0):
+    """
+    Mỗi interval_hours giờ, re-fetch nến gần nhất từ Binance REST
+    và cập nhật signal cho tất cả streams.
+    Giải quyết vấn đề Render free tier ephemeral DB (mất data khi restart).
+    """
+    sleep_secs = interval_hours * 3600
+    while True:
+        await asyncio.sleep(sleep_secs)
+        log.info(f"🔄 Periodic re-seed starting ({interval_hours}h cycle)...")
+        for state in states:
+            try:
+                resp = requests.get(BINANCE_REST, params={
+                    "symbol": state.symbol, "interval": state.interval, "limit": WARMUP
+                }, timeout=10)
+                resp.raise_for_status()
+                klines = resp.json()
+                # Reset state và load lại
+                state.closes.clear()
+                state.highs.clear()
+                state.lows.clear()
+                state.volumes.clear()
+                state.ready = False
+                last_closed = None
+                for k in klines[:-1]:
+                    state.update(
+                        close  = float(k[4]),
+                        volume = float(k[5]),
+                        high   = float(k[2]),
+                        low    = float(k[3]),
+                    )
+                    last_closed = k
+                if last_closed:
+                    await seed_initial_signal(state, last_closed)
+            except Exception as e:
+                log.warning(f"Re-seed error {state.symbol} [{state.label}]: {e}")
+        log.info("✅ Periodic re-seed done")
+
+
 async def main():
     # init_db_sync() is idempotent — safe to call multiple times
     # webhook_server.py also calls it on startup, which is fine
@@ -556,7 +650,9 @@ async def main():
     await asyncio.gather(
         *[handle_stream(s) for s in states],
         stop_loss_monitor(),
+        periodic_reseed(states, interval_hours=4.0),
     )
+
 
 
 if __name__ == "__main__":
